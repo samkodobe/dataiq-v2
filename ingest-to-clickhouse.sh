@@ -1,32 +1,36 @@
 #!/bin/bash
 
-# Check if the correct number of arguments is provided
-if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 <date in format yyyymmdd>"
+# Check if at least one date is provided
+if [ "$#" -lt 1 ]; then
+    echo "Usage: $0 <date1> [date2] [date3] ..."
     exit 1
 fi
 
 remote_host="san-storage"
 remote_directory="/data1/backup/JMG"
+local_data_dir="data"
 
+# Function to spool files from the remote server
 spool_from_remote() {
     local spool_date="$1"
     local directory="$2"
 
-    # Check if the directory exists
-    if [ ! -d "$directory" ]; then
-        echo "Error: Parent directory not found: $directory"
-        exit 1
-    fi
+    # Ensure local directory exists
+    mkdir -p "$directory"
 
+    # Get the list of files from the remote directory
     remote_file_list=$(ssh "$remote_host" "cd $remote_directory && ls *$spool_date*.txt.gz 2>/dev/null" | tr '\n' ' ')
-    # Check if we got any files
+    remote_file_count=$(echo "$remote_file_list" | wc -w)
+
+    # Check if files exist on the remote server
     if [ -z "$remote_file_list" ]; then
         echo "No files found on remote server for date $spool_date."
-        exit 0
+        return 1
     fi
 
-    echo "Remote files found: $remote_file_list"
+    echo "Remote files found for $spool_date: $remote_file_list ($remote_file_count files)"
+
+    # Identify missing files
     missing_files=()
     for file in $remote_file_list; do
         if [ ! -f "$directory/$file" ]; then
@@ -35,35 +39,32 @@ spool_from_remote() {
     done
 
     if [ ${#missing_files[@]} -eq 0 ]; then
-        echo "All files already exist locally. No need to fetch."
+        echo "All files for $spool_date already exist locally. No need to fetch."
+        return 0
+    fi
+
+    echo "Fetching missing files for $spool_date: ${missing_files[@]}"
+
+    # Fetch missing files concurrently
+    for file in "${missing_files[@]}"; do
+        (
+            echo "Fetching $file..."
+            scp -q "$remote_host:$remote_directory/$file" "$directory/"
+        ) &
+    done
+
+    wait  # Wait for all parallel SCP processes to finish
+
+    # Verify file count
+    local_file_count=$(ls -1 "$directory"/*.txt.gz 2>/dev/null | wc -l)
+
+    if [ "$local_file_count" -ne "$remote_file_count" ]; then
+        echo "Error: File count mismatch for $spool_date! Expected $remote_file_count, but got $local_file_count"
         return 1
     fi
 
-    echo "Fetching missing files: ${missing_files[@]}"
-
-    # Convert array to space-separated string for SCP
-    scp_files=$(printf "%s " "${missing_files[@]}")
-
-    # Iterate through missing files and fetch each one
-    for file in "${missing_files[@]}"; do
-        echo "Fetching $file..."
-        scp -v "$remote_host:$remote_directory/$file" "$directory/"
-    done
-
-    echo "Files successfully fetched!"
-
-    # check files for date from Remote directory
-    # ssh "san-storage" "cd $remote_directory && for file in *$spool_date*.txt.gz; do basename \$file; done 2>/dev/null" > "$remote_file_list"
-
-    # spool files that matches date from remote to local directory
-    # scp -v "san-storage:/data1/backup/JMG/jartlr$spool_date*" "$directory"
-}
-
-# Function to gzip files in a directory
-gzip_files() {
-    local directory="$1"
-    echo "Gzipping files in directory: $directory"
-    gzip "$directory"/*
+    echo "All files for $spool_date successfully spooled!"
+    return 0
 }
 
 # Function to process a directory
@@ -71,37 +72,31 @@ process_directory() {
     local directory="$1"
     echo "Processing directory: $directory"
 
-    # Unzip files
-    for file in "$directory"/*.gz; do
-        if [ -e "$file" ]; then
-            gunzip "$file"
-            echo "Unzipped $file"
-        fi
-    done
+    # Unzip all files before processing
+    gunzip "$directory"/*.gz
 
     # Run Spark Script
     spark-submit --jars ./jars/clickhouse-jdbc-0.7.1-patch1-all.jar process-dump.py "$directory"
 
-    # Remove files at the end of the processing
-    gzip_files "$directory"
-    # rm -rf "$directory"
+    # Remove files after successful processing
+    echo "Deleting processed files in $directory"
+    rm -rf "$directory"/*
+
+    echo "Processing completed for $directory!"
 }
 
-# Specify the parent directory containing subdirectories
-date_to_spool="$1"
-parent_directory="data/$date_to_spool"
+# Process multiple dates
+for date_to_spool in "$@"; do
+    parent_directory="$local_data_dir/$date_to_spool"
 
-echo "parent_directory: $parent_directory"
+    echo "Processing date: $date_to_spool"
+    echo "Local directory: $parent_directory"
 
-mkdir -p $parent_directory
+    # Spool files first, then process if successful
+    spool_from_remote "$date_to_spool" "$parent_directory" && process_directory "$parent_directory" &
 
-if [[ "$1" != "20210101" ]]; then
-    spool_from_remote "$date_to_spool" "$parent_directory"
-fi
+done
 
-# Process the parent directory
-if [ -d "$parent_directory" ]; then
-    process_directory "$parent_directory"
-fi
+wait  # Ensure all background processes complete
 
-echo "Script completed."
+echo "All processes completed."
