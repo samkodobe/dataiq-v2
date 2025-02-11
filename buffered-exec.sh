@@ -24,20 +24,21 @@ get_previous_date() {
 
 # Function to check active jobs and limit parallel execution
 wait_for_available_resources() {
-    while true; do
-        # Count running ingestion jobs
-        active_jobs=$(jobs -rp | wc -l)
+    local cpu_cores
+    cpu_cores=$(nproc)
+    local max_safe_load
+    max_safe_load=$(echo "$cpu_cores * 0.8" | bc)
 
-        # Get current system load (1-minute average)
+    while true; do
+        active_jobs=$(jobs -rp | wc -l)
         system_load=$(awk '{print $1}' < /proc/loadavg)
 
-        # Adjust thresholds dynamically based on available resources
-        if [ "$active_jobs" -lt "$max_parallel_jobs" ] && (( $(echo "$system_load < 4.0" | bc -l) )); then
+        if [ "$active_jobs" -lt "$max_parallel_jobs" ] && (( $(echo "$system_load < $max_safe_load" | bc -l) )); then
             break  # Exit loop if system is ready
         fi
 
         echo "System under high load ($system_load), waiting for jobs to finish..."
-        sleep 60  # Wait and recheck
+        sleep 300  # Wait and recheck
     done
 }
 
