@@ -71,7 +71,7 @@ while [[ "$current_date" -ge "$end_date" ]]; do
     ./ingest-to-clickhouse.sh "${batch_dates[@]}" &
 
     # Allow background jobs but limit resource consumption
-    sleep 300
+    sleep 60
 done
 
 # Wait for all background jobs to finish
