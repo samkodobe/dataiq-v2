@@ -36,7 +36,7 @@ spool_from_remote() {
 
     if [ ${#missing_files[@]} -eq 0 ]; then
         echo "All files already exist locally. No need to fetch."
-        exit 0
+        return 1
     fi
 
     echo "Fetching missing files: ${missing_files[@]}"
@@ -44,8 +44,11 @@ spool_from_remote() {
     # Convert array to space-separated string for SCP
     scp_files=$(printf "%s " "${missing_files[@]}")
 
-    # Fetch only missing files
-    scp -v "$remote_host:$remote_directory/{$scp_files}" "$directory"
+    # Iterate through missing files and fetch each one
+    for file in "${missing_files[@]}"; do
+        echo "Fetching $file..."
+        scp -v "$remote_host:$remote_directory/$file" "$directory/"
+    done
 
     echo "Files successfully fetched!"
 
