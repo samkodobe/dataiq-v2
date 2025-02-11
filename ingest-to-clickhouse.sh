@@ -17,7 +17,7 @@ spool_from_remote() {
     fi
 
     # spool files that matches date from remote to local directory
-    scp "san-storage:/data1/backup/JMG/{$spool_date}*" "$directory"
+    scp -v "san-storage:/data1/backup/JMG/jartlr{$spool_date}* $directory"
 }
 
 # Function to gzip files in a directory
