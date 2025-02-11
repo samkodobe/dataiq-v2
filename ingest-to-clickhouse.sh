@@ -10,13 +10,29 @@ remote_host="san-storage"
 remote_directory="/data1/backup/JMG"
 local_data_dir="data"
 
-# Function to spool files from the remote server
+# Function to check if a folder is empty
+is_folder_empty() {
+    local directory="$1"
+    if [ -d "$directory" ] && [ -z "$(ls -A "$directory")" ]; then
+        return 0  # Folder is empty (assumed processed)
+    else
+        return 1  # Folder contains files or does not exist
+    fi
+}
+
+# Function to fetch missing files from the remote server
 spool_from_remote() {
     local spool_date="$1"
     local directory="$2"
 
     # Ensure local directory exists
     mkdir -p "$directory"
+
+    # Check if folder is empty (assume processed)
+    if is_folder_empty "$directory"; then
+        echo "Skipping $spool_date - Folder exists but is empty (already processed)."
+        return 0
+    fi
 
     # Get the list of files from the remote directory
     remote_file_list=$(ssh "$remote_host" "cd $remote_directory && ls *$spool_date*.txt.gz 2>/dev/null" | tr '\n' ' ')
@@ -38,24 +54,19 @@ spool_from_remote() {
         fi
     done
 
-    if [ ${#missing_files[@]} -eq 0 ]; then
-        echo "All files for $spool_date already exist locally. No need to fetch."
-        return 0
+    # Fetch only missing files
+    if [ ${#missing_files[@]} -gt 0 ]; then
+        echo "Fetching missing files for $spool_date: ${missing_files[@]}"
+        for file in "${missing_files[@]}"; do
+            (
+                echo "Fetching $file..."
+                scp -q "$remote_host:$remote_directory/$file" "$directory/"
+            ) &
+        done
+        wait  # Wait for all parallel SCP processes to finish
     fi
 
-    echo "Fetching missing files for $spool_date: ${missing_files[@]}"
-
-    # Fetch missing files concurrently
-    for file in "${missing_files[@]}"; do
-        (
-            echo "Fetching $file..."
-            scp -q "$remote_host:$remote_directory/$file" "$directory/"
-        ) &
-    done
-
-    wait  # Wait for all parallel SCP processes to finish
-
-    # Verify file count
+    # Verify file count after fetching
     local_file_count=$(ls -1 "$directory"/*.txt.gz 2>/dev/null | wc -l)
 
     if [ "$local_file_count" -ne "$remote_file_count" ]; then
@@ -94,9 +105,8 @@ for date_to_spool in "$@"; do
 
     # Spool files first, then process if successful
     spool_from_remote "$date_to_spool" "$parent_directory" && process_directory "$parent_directory" &
-
 done
 
 wait  # Ensure all background processes complete
 
-echo "All processes completed."
+echo "All ingestion processes completed."
