@@ -26,7 +26,7 @@ log_data = spark.read.text(log_directory)
 log_data = log_data.withColumn("split_data", split(log_data.value, "\\|"))
 log_data = log_data.withColumn("batchName", input_file_name())
 log_data = log_data.filter(
-    (col("split_data")[6] == "APP MT") & (col("split_data")[7] == "ACK")
+    (col("split_data")[5] == "APP MT") & (col("split_data")[6] == "ACK")
 )
 
 # log_data.show
