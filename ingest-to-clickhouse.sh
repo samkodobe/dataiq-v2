@@ -17,7 +17,7 @@ spool_from_remote() {
     fi
 
     # spool files that matches date from remote to local directory
-    scp -v "san-storage:/data1/backup/JMG/jartlr{$spool_date}*" "$directory"
+    scp -v "san-storage:/data1/backup/JMG/jartlr$spool_date*" "$directory"
 }
 
 # Function to gzip files in a directory
@@ -32,19 +32,19 @@ process_directory() {
     local directory="$1"
     echo "Processing directory: $directory"
 
-    # # Unzip files
-    # for file in "$directory"/*.gz; do
-    #     if [ -e "$file" ]; then
-    #         gunzip "$file"
-    #         echo "Unzipped $file"
-    #     fi
-    # done
+    # Unzip files
+    for file in "$directory"/*.gz; do
+        if [ -e "$file" ]; then
+            gunzip "$file"
+            echo "Unzipped $file"
+        fi
+    done
 
     # Run Spark Script
     spark-submit --jars ./jars/clickhouse-jdbc-0.7.1-patch1-all.jar process-dump.py "$directory"
 
     # Gzip files at the end of the processing
-    # gzip_files "$directory"
+    gzip_files "$directory"
 }
 
 # Specify the parent directory containing subdirectories
