@@ -38,7 +38,7 @@ wait_for_available_resources() {
         fi
 
         echo "System under high load ($system_load), waiting for jobs to finish..."
-        sleep 300  # Wait and recheck
+        sleep 60  # Wait and recheck
     done
 }
 
@@ -71,7 +71,7 @@ while [[ "$current_date" -ge "$end_date" ]]; do
     ./ingest-to-clickhouse.sh "${batch_dates[@]}" &
 
     # Allow background jobs but limit resource consumption
-    sleep 5
+    sleep 300
 done
 
 # Wait for all background jobs to finish
