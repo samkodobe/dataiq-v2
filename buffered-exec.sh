@@ -10,6 +10,7 @@ start_date="$1"
 count="$2"
 end_date="$3"
 max_parallel_jobs=2  # Adjust based on available server resources
+local_data_dir="data"
 
 # Function to convert YYYYMMDD to YYYY-MM-DD for `date` command compatibility
 convert_to_dash_format() {
@@ -20,6 +21,16 @@ convert_to_dash_format() {
 get_previous_date() {
     local input_date_dash=$(convert_to_dash_format "$1")
     date -d "$input_date_dash -1 day" +"%Y%m%d"
+}
+
+# Function to check if a folder is empty
+is_folder_empty() {
+    local directory="$1"
+    if [ -d "$directory" ] && [ -z "$(ls -A "$directory")" ]; then
+        return 0  # Folder is empty
+    else
+        return 1  # Folder has files or does not exist
+    fi
 }
 
 # Function to check active jobs and limit parallel execution
@@ -54,7 +65,15 @@ current_date="$start_date"
 while [[ "$current_date" -ge "$end_date" ]]; do
     batch_dates=()
     for ((i = 0; i <= count; i++)); do
-        batch_dates+=("$current_date")
+        parent_directory="$local_data_dir/$current_date"
+
+        # Skip remote fetch if the folder exists and is empty
+        if is_folder_empty "$parent_directory"; then
+            echo "Skipping $current_date - Folder exists but is empty (already processed)."
+        else
+            batch_dates+=("$current_date")
+        fi
+
         current_date=$(get_previous_date "$current_date")
 
         # Stop if we reached the end date
@@ -62,6 +81,11 @@ while [[ "$current_date" -ge "$end_date" ]]; do
             break
         fi
     done
+
+    # If no valid batch dates, skip this iteration
+    if [ ${#batch_dates[@]} -eq 0 ]; then
+        continue
+    fi
 
     # Wait if system is overloaded before launching a new batch
     wait_for_available_resources
@@ -71,7 +95,7 @@ while [[ "$current_date" -ge "$end_date" ]]; do
     ./ingest-to-clickhouse.sh "${batch_dates[@]}" &
 
     # Allow background jobs but limit resource consumption
-    sleep 60
+    sleep 5
 done
 
 # Wait for all background jobs to finish
