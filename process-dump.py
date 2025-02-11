@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import split, input_file_name, regexp_replace, length, when, unhex
+from pyspark.sql.functions import split, input_file_name, regexp_replace, length, when, unhex, col
 from dotenv import load_dotenv
 import os
 import sys
@@ -14,14 +14,6 @@ if len(sys.argv) != 2:
 # Get the log directory from the command line argument
 log_directory = sys.argv[1]
 
-# Initialize Spark Session
-# spark = SparkSession.builder \
-#     .appName("DataIQSpooler") \
-#     .master("spark://localhost:7077") \
-#     .config("spark.driver.extraClassPath", "/opt/spark/jars/clickhouse-jdbc-0.3.2.jar") \
-#     .config("spark.executor.extraClassPath", "/opt/spark/jars/clickhouse-jdbc-0.3.2.jar") \
-#     .getOrCreate()
-
 spark = SparkSession.builder \
     .appName("DataIQSpooler") \
     .config("spark.driver.extraClassPath", "/opt/spark/jars/clickhouse-jdbc-0.7.1-patch1-all.jar") \
@@ -33,9 +25,11 @@ log_data = spark.read.text(log_directory)
 # Split each line by the '|' delimiter and select the first three columns
 log_data = log_data.withColumn("split_data", split(log_data.value, "\\|"))
 log_data = log_data.withColumn("batchName", input_file_name())
-log_data = log_data.filter(log_data.split_data[47] == "SUBMIT_SM")
-# log_data.show
+log_data = log_data.filter(
+    (col("split_data")[6] == "APP MT") & (col("split_data")[7] == "ACK")
+)
 
+# log_data.show
 filtered_log_data = log_data.selectExpr("split_data[1] as bankcode", "split_data[2] as phonenumber", "split_data[3] as message", "split_data[4] as receivedat", "split_data[11] as network", "split_data[12] as msgid", "batchName")
                    
 filtered_log_data = filtered_log_data.withColumn("receivedat", (filtered_log_data["receivedat"].cast("timestamp")))
