@@ -25,14 +25,14 @@ spool_from_remote() {
     local spool_date="$1"
     local directory="$2"
 
-    # Ensure local directory exists
-    mkdir -p "$directory"
-
     # Check if folder is empty (assume processed)
     if is_folder_empty "$directory"; then
         echo "Skipping $spool_date - Folder exists but is empty (already processed)."
         return 0
     fi
+
+    # Ensure local directory exists
+    mkdir -p "$directory"
 
     # Get the list of files from the remote directory
     remote_file_list=$(ssh "$remote_host" "cd $remote_directory && ls *$spool_date*.txt.gz 2>/dev/null" | tr '\n' ' ')
